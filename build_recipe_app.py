@@ -698,7 +698,7 @@ async function doLogin() {
   if (data && data.recipes) {
     R = data.recipes;
     IMGS = data.images || [];
-    sessionStorage.setItem('bd_pass', pass);
+    localStorage.setItem('bd_pass', pass);
     $('loginScreen').classList.add('hidden');
     renderFilters(); renderCats(); render(); updateFab();
   } else {
@@ -712,7 +712,7 @@ async function doLogin() {
 
 async function initApp() {
   // Check sessionStorage for cached password
-  const cached = sessionStorage.getItem('bd_pass');
+  const cached = localStorage.getItem('bd_pass');
   if (cached) {
     const data = await decryptData(cached);
     if (data && data.recipes) {
@@ -1510,6 +1510,40 @@ body {{
   cursor: pointer;
   white-space: nowrap;
 }}
+.day-pick-btn {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  border: 1.5px solid var(--green-pale);
+  border-radius: 10px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}}
+.day-pick-btn:active {{ background: var(--green-bg); }}
+.day-pick-label {{ font-weight: 600; color: var(--text); }}
+.day-pick-label small {{ font-weight: 400; color: var(--text-light); }}
+.day-pick-current {{ font-size: 12px; color: var(--text-light); max-width: 45%; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.day-pick-empty {{ font-size: 12px; color: var(--green-light); font-style: italic; }}
+.weekmenu-reset {{
+  padding: 12px 16px;
+  text-align: center;
+}}
+.weekmenu-reset button {{
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: 1.5px solid #c62828;
+  background: white;
+  color: #c62828;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}}
+.weekmenu-reset button:active {{ background: #ffebee; }}
 @media (min-width: 600px) {{
   .header {{ text-align: center; }}
   .filters, .cat-tabs {{ justify-content: center; }}
@@ -1615,6 +1649,9 @@ body {{
         </div>
       </div>
     </div>
+    <div class="weekmenu-reset">
+      <button onclick="resetWeekMenu()">&#128465; Weekmenu wissen</button>
+    </div>
   </div>
 </div>
 
@@ -1628,19 +1665,19 @@ body {{
   </div>
 </div>
 
+
 <script>
 {data_script}
 let ebook = 'all';
 let cat = 'all';
 let q = '';
 let shop = JSON.parse(localStorage.getItem('bd_shop') || '[]');
-let shopRecipes = JSON.parse(localStorage.getItem('bd_shop_recipes') || '[]');
 
 const $ = id => document.getElementById(id);
 
 function esc(s) {{ const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }}
 
-function saveShop() {{ localStorage.setItem('bd_shop', JSON.stringify(shop)); localStorage.setItem('bd_shop_recipes', JSON.stringify(shopRecipes)); updateFab(); }}
+function saveShop() {{ localStorage.setItem('bd_shop', JSON.stringify(shop)); updateFab(); }}
 
 function updateFab() {{
   const c = $('fabCount');
@@ -1717,6 +1754,7 @@ function render() {{
             ${{r.ingredients.map(ing => `<li>${{esc(ing)}}</li>`).join('')}}
           </ul>
           <button class="add-btn" onclick="addShop(${{i}});event.stopPropagation()">+ Toevoegen aan boodschappenlijst</button>
+          <button class="add-btn" style="background:var(--green-bg);color:var(--green);margin-top:6px" onclick="pickDayForRecipe(${{i}});event.stopPropagation()">&#128197; Toevoegen aan weekmenu</button>
         </div>` : ''}}
         ${{r.steps.length ? `
         <div class="detail-sec">
@@ -1745,13 +1783,10 @@ function showToast(msg) {{
 
 function addShop(i) {{
   const r = filtered()[i];
-  const origIdx = r._idx;
   let added = 0;
   r.ingredients.forEach(ing => {{
     if (!shop.includes(ing)) {{ shop.push(ing); added++; }}
   }});
-  // Track which recipe was added to shopping list (for weekmenu)
-  if (!shopRecipes.includes(origIdx)) shopRecipes.push(origIdx);
   saveShop();
   if (added > 0) showToast(added + ' ingredi\\u00ebnt' + (added>1?'en':'') + ' toegevoegd!');
   else showToast('Alle ingredi\\u00ebnten staan al op je lijst');
@@ -1778,7 +1813,7 @@ $('clearBtn').onclick = () => {{
 }};
 $('confirmNo').onclick = () => $('confirmOverlay').classList.remove('open');
 $('confirmYes').onclick = () => {{
-  shop = []; shopRecipes = []; saveShop(); renderShop();
+  shop = []; saveShop(); renderShop();
   $('confirmOverlay').classList.remove('open');
   showToast('Boodschappenlijst geleegd');
 }};
@@ -2112,6 +2147,22 @@ async function picnicAddAll() {{
 // Weekmenu
 let weekMenu = JSON.parse(localStorage.getItem('bd_weekmenu') || '{{}}');
 
+let menuRecipes = JSON.parse(localStorage.getItem('bd_menu_recipes') || '[]');
+
+function saveMenuRecipes() {{
+  localStorage.setItem('bd_menu_recipes', JSON.stringify(menuRecipes));
+}}
+
+function pickDayForRecipe(filteredIdx) {{
+  const r = filtered()[filteredIdx];
+  const origIdx = r._idx;
+  if (!menuRecipes.includes(origIdx)) {{
+    menuRecipes.push(origIdx);
+    saveMenuRecipes();
+  }}
+  showToast(esc(r.name) + ' beschikbaar in weekmenu!');
+}}
+
 function getWeekDays() {{
   const days = ['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
   const today = new Date();
@@ -2147,8 +2198,8 @@ function renderWeekMenu() {{
   }}
   saveWeekMenu();
 
-  // Build recipe options for dropdown — only recipes added to shopping list
-  const recipeOpts = shopRecipes.map(i => R[i] ? `<option value="${{i}}">${{esc(R[i].name)}} (E${{R[i].ebook}})</option>` : '').join('');
+  // Build recipe options for dropdown — only recipes marked for weekmenu
+  const recipeOpts = menuRecipes.map(i => R[i] ? `<option value="${{i}}">${{esc(R[i].name)}} (E${{R[i].ebook}})</option>` : '').join('');
 
   $('weekMenuContent').innerHTML = days.map(day => {{
     const recipeIdx = weekMenu[day.key];
@@ -2180,7 +2231,7 @@ function renderWeekMenu() {{
               <option value="">Kies een recept...</option>
               ${{recipeOpts}}
             </select>
-          ` : `<p style="color:var(--text-light);font-size:13px;text-align:center;padding:8px 0">Voeg eerst recepten toe aan je boodschappenlijst</p>`}}
+          ` : `<p style="color:var(--text-light);font-size:13px;text-align:center;padding:4px 0">Markeer eerst recepten via &#128197; Toevoegen aan weekmenu</p>`}}
         </div>
       `}}
     </div>`;
@@ -2259,6 +2310,19 @@ function applySyncCode() {{
   }} catch(e) {{
     showToast('Ongeldige code');
   }}
+}}
+
+function resetWeekMenu() {{
+  if (!Object.keys(weekMenu).length && !menuRecipes.length) {{
+    showToast('Weekmenu is al leeg');
+    return;
+  }}
+  weekMenu = {{}};
+  menuRecipes = [];
+  saveWeekMenu();
+  saveMenuRecipes();
+  renderWeekMenu();
+  showToast('Weekmenu gewist!');
 }}
 
 {decrypt_js}
