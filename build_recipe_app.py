@@ -545,21 +545,38 @@ const IMGS = {images_json};
   font-size: 48px;
   margin-bottom: 16px;
 }
-.login-box input {
+.login-pass-wrap {
+  position: relative;
+  margin-bottom: 16px;
+}
+.login-pass-wrap input {
   width: 100%;
-  padding: 14px 18px;
+  padding: 14px 48px 14px 18px;
   border: 2px solid #e0e0e0;
   border-radius: 14px;
   font-size: 16px;
   text-align: center;
   outline: none;
   transition: border-color 0.2s;
-  margin-bottom: 16px;
 }
-.login-box input:focus {
+.login-pass-wrap input:focus {
   border-color: var(--green);
 }
-.login-box button {
+.pass-toggle {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  opacity: 0.4;
+  padding: 4px;
+  line-height: 1;
+}
+.pass-toggle:active { opacity: 0.7; }
+.login-box button.login-submit {
   width: 100%;
   padding: 14px;
   border: none;
@@ -571,8 +588,8 @@ const IMGS = {images_json};
   cursor: pointer;
   transition: transform 0.1s;
 }
-.login-box button:active { transform: scale(0.97); }
-.login-box button:disabled {
+.login-box button.login-submit:active { transform: scale(0.97); }
+.login-box button.login-submit:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -590,13 +607,30 @@ const IMGS = {images_json};
     <div class="icon">&#128274;</div>
     <h1>Broodje Dunner</h1>
     <div class="sub">Voer het wachtwoord in om de recepten te openen</div>
-    <input type="password" id="loginPass" placeholder="Wachtwoord" autocomplete="off">
-    <button id="loginBtn" onclick="doLogin()">Ontgrendelen</button>
+    <div class="login-pass-wrap">
+      <input type="password" id="loginPass" placeholder="Wachtwoord" autocomplete="off">
+      <button class="pass-toggle" type="button" onclick="togglePassVis()" id="passToggle">&#128065;</button>
+    </div>
+    <button class="login-submit" id="loginBtn" onclick="doLogin()">Ontgrendelen</button>
     <div class="login-error" id="loginError"></div>
   </div>
 </div>
 '''
         decrypt_js = '''
+function togglePassVis() {
+  const inp = $('loginPass');
+  const btn = $('passToggle');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    btn.innerHTML = '&#128064;';
+    btn.style.opacity = '0.7';
+  } else {
+    inp.type = 'password';
+    btn.innerHTML = '&#128065;';
+    btn.style.opacity = '0.4';
+  }
+}
+
 async function deriveKey(password, salt) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -1204,13 +1238,19 @@ body {{
 .picnic-status.ok {{ background: #e8f5e9; color: #2e7d32; }}
 .picnic-status.err {{ background: #ffebee; color: #c62828; }}
 .picnic-status.busy {{ background: #fff3e0; color: #e65100; }}
+#picnicOverlay .modal {{
+  max-height: 100vh;
+  height: 100vh;
+  border-radius: 0;
+  max-width: 100%;
+}}
 .picnic-progress {{
   margin-top: 12px;
   padding: 12px;
   background: #fafafa;
   border-radius: 10px;
   font-size: 13px;
-  max-height: 200px;
+  max-height: calc(100vh - 320px);
   overflow-y: auto;
 }}
 .picnic-progress .item {{
@@ -1308,6 +1348,152 @@ body {{
   cursor: pointer;
   white-space: nowrap;
 }}
+/* Weekmenu */
+.menu-fab {{
+  position: fixed;
+  bottom: 20px;
+  left: 16px;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: #e65100;
+  color: white;
+  border: none;
+  font-size: 22px;
+  box-shadow: 0 4px 16px rgba(230,81,0,0.4);
+  cursor: pointer;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}}
+.menu-fab:active {{ transform: scale(0.9); }}
+.weekmenu-day {{
+  background: white;
+  border-radius: 14px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}}
+.weekmenu-day-header {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+}}
+.weekmenu-day-header h3 {{
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}}
+.weekmenu-day-header .day-badge {{
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: var(--green-bg);
+  color: var(--green);
+}}
+.weekmenu-day-header .day-badge.today {{
+  background: var(--green);
+  color: white;
+}}
+.weekmenu-recipe {{
+  padding: 0 16px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}}
+.weekmenu-recipe img {{
+  width: 60px; height: 60px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #e8e8e8;
+}}
+.weekmenu-recipe .wm-info {{
+  flex: 1;
+  min-width: 0;
+}}
+.weekmenu-recipe .wm-name {{
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}}
+.weekmenu-recipe .wm-meta {{
+  font-size: 12px;
+  color: var(--text-light);
+  margin-top: 2px;
+}}
+.weekmenu-remove {{
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #c62828;
+  cursor: pointer;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}}
+.weekmenu-empty {{
+  padding: 0 16px 14px;
+  font-size: 13px;
+  color: var(--text-light);
+  font-style: italic;
+}}
+.weekmenu-add {{
+  padding: 0 16px 14px;
+}}
+.weekmenu-add select {{
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid var(--green-pale);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: white;
+  outline: none;
+}}
+.weekmenu-sync {{
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: #f8f9f8;
+  border-radius: 14px;
+}}
+.weekmenu-sync p {{
+  font-size: 13px;
+  color: var(--text-light);
+  margin-bottom: 8px;
+}}
+.weekmenu-sync .sync-code {{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}}
+.weekmenu-sync .sync-code input {{
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: monospace;
+  text-align: center;
+  outline: none;
+}}
+.weekmenu-sync .sync-code button {{
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--green);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}}
 @media (min-width: 600px) {{
   .header {{ text-align: center; }}
   .filters, .cat-tabs {{ justify-content: center; }}
@@ -1332,6 +1518,7 @@ body {{
 <div class="recipe-list" id="list"></div>
 
 <button class="fab" id="fabBtn">&#128722;<span class="count" id="fabCount" style="display:none">0</span></button>
+<button class="menu-fab" id="menuFab" onclick="openWeekMenu()">&#128197;</button>
 
 <div class="toast" id="toast"></div>
 
@@ -1357,7 +1544,7 @@ body {{
   </div>
 </div>
 
-<div class="overlay" id="picnicOverlay">
+<div class="overlay" id="picnicOverlay" style="align-items:stretch">
   <div class="modal">
     <div class="modal-header">
       <button class="modal-back" onclick="$('picnicOverlay').classList.remove('open');renderShop();$('overlay').classList.add('open')">&#8592; Terug</button>
@@ -1386,6 +1573,30 @@ body {{
         <div id="picnicProgress" class="picnic-progress"></div>
         <button class="picnic-btn" style="margin-top:12px" id="picnicStartBtn" onclick="picnicAddAll()">Alles zoeken en toevoegen</button>
         <button class="picnic-btn" style="margin-top:8px;background:#f0f4f0;color:var(--text)" onclick="picnicLogout()">Uitloggen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="weekMenuOverlay" style="align-items:stretch">
+  <div class="modal" style="max-height:100vh;height:100vh;border-radius:0;max-width:100%">
+    <div class="modal-header">
+      <h2>&#128197; Weekmenu</h2>
+      <button class="modal-close" onclick="$('weekMenuOverlay').classList.remove('open')">&times;</button>
+    </div>
+    <div id="weekMenuContent"></div>
+    <div class="weekmenu-sync" id="weekMenuSync">
+      <p>&#128260; Sync met partner — deel deze code:</p>
+      <div class="sync-code">
+        <input type="text" id="syncCode" readonly>
+        <button onclick="copySyncCode()">Kopieer</button>
+      </div>
+      <div style="margin-top:8px">
+        <p>Of voer de code van je partner in:</p>
+        <div class="sync-code" style="margin-top:6px">
+          <input type="text" id="syncCodeInput" placeholder="Plak code hier">
+          <button onclick="applySyncCode()">Laden</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1653,16 +1864,28 @@ function cleanIngredient(ing) {{
 
 function renderPicnicItems() {{
   const shopItems = window._picnicShopItems || shop;
-  const items = shopItems.map(ing => ({{
-    original: ing,
-    search: cleanIngredient(ing),
-    status: 'wait',
-    products: [],
-    result: ''
-  }}));
+  const existing = window._picnicItems || [];
+
+  // Build map of existing items to preserve their state
+  const existingMap = {{}};
+  existing.forEach(it => {{ existingMap[it.original] = it; }});
+
+  // Build new list: reuse existing state where available
+  const items = shopItems.map(ing => {{
+    if (existingMap[ing]) return existingMap[ing];
+    return {{
+      original: ing,
+      search: cleanIngredient(ing),
+      status: 'wait',
+      products: [],
+      result: ''
+    }};
+  }});
+
   window._picnicItems = items;
-  window._picnicAdded = 0;
-  window._picnicFailed = 0;
+  // Recalculate counters from actual item statuses
+  window._picnicAdded = items.filter(it => it.status === 'ok').length;
+  window._picnicFailed = items.filter(it => it.status === 'skip' || it.status === 'fail').length;
   updatePicnicProgress();
 }}
 
@@ -1853,6 +2076,148 @@ async function picnicAddAll() {{
     $('picnicStartBtn').textContent = 'Alles zoeken en toevoegen';
     const a = window._picnicAdded;
     showToast(`Klaar! ${{a}} producten toegevoegd aan Picnic`);
+  }}
+}}
+
+// Weekmenu
+let weekMenu = JSON.parse(localStorage.getItem('bd_weekmenu') || '{{}}');
+
+function getWeekDays() {{
+  const days = ['Zondag','Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag'];
+  const today = new Date();
+  // Start from today, show 7 days
+  const result = [];
+  for (let i = 0; i < 7; i++) {{
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const key = d.toISOString().split('T')[0]; // YYYY-MM-DD
+    const dayName = days[d.getDay()];
+    const label = i === 0 ? 'Vandaag' : i === 1 ? 'Morgen' : dayName;
+    const dateStr = d.getDate() + '/' + (d.getMonth() + 1);
+    result.push({{ key, dayName, label, dateStr, isToday: i === 0 }});
+  }}
+  return result;
+}}
+
+function saveWeekMenu() {{
+  localStorage.setItem('bd_weekmenu', JSON.stringify(weekMenu));
+}}
+
+function openWeekMenu() {{
+  renderWeekMenu();
+  $('weekMenuOverlay').classList.add('open');
+}}
+
+function renderWeekMenu() {{
+  const days = getWeekDays();
+  // Clean old entries (older than today)
+  const todayKey = days[0].key;
+  for (const k of Object.keys(weekMenu)) {{
+    if (k < todayKey) delete weekMenu[k];
+  }}
+  saveWeekMenu();
+
+  // Build recipe options for dropdown
+  const recipeOpts = R.map((r, i) => `<option value="${{i}}">${{esc(r.name)}} (E${{r.ebook}})</option>`).join('');
+
+  $('weekMenuContent').innerHTML = days.map(day => {{
+    const recipeIdx = weekMenu[day.key];
+    const hasRecipe = recipeIdx !== undefined && recipeIdx !== null && R[recipeIdx];
+    const recipe = hasRecipe ? R[recipeIdx] : null;
+    const img = hasRecipe && IMGS[recipeIdx] ? IMGS[recipeIdx] : '';
+
+    return `<div class="weekmenu-day">
+      <div class="weekmenu-day-header">
+        <h3>${{day.label}} <span style="font-weight:400;color:var(--text-light);font-size:12px">${{day.dateStr}}</span></h3>
+        <span class="day-badge ${{day.isToday ? 'today' : ''}}">${{day.dayName}}</span>
+      </div>
+      ${{hasRecipe ? `
+        <div class="weekmenu-recipe">
+          ${{img ? `<img src="${{img}}" alt="">` : ''}}
+          <div class="wm-info">
+            <div class="wm-name">${{esc(recipe.name)}}</div>
+            <div class="wm-meta">${{recipe.category}}${{recipe.time ? ' \\u2022 ' + recipe.time : ''}}${{recipe.portions ? ' \\u2022 ' + recipe.portions + 'p' : ''}}</div>
+          </div>
+          <button class="weekmenu-remove" onclick="removeFromMenu('${{day.key}}')" title="Verwijder">\\u2717</button>
+        </div>
+        <div class="weekmenu-add" style="padding-top:0">
+          <button class="add-btn" onclick="addMenuToShop('${{day.key}}')" style="font-size:12px;padding:8px">+ Ingredi\\u00ebnten naar boodschappenlijst</button>
+        </div>
+      ` : `
+        <div class="weekmenu-add">
+          <select onchange="assignRecipe('${{day.key}}', this.value)">
+            <option value="">Kies een recept...</option>
+            ${{recipeOpts}}
+          </select>
+        </div>
+      `}}
+    </div>`;
+  }}).join('');
+
+  // Update sync code
+  updateSyncCode();
+}}
+
+function assignRecipe(dayKey, recipeIdx) {{
+  if (recipeIdx === '') return;
+  weekMenu[dayKey] = parseInt(recipeIdx);
+  saveWeekMenu();
+  renderWeekMenu();
+}}
+
+function removeFromMenu(dayKey) {{
+  delete weekMenu[dayKey];
+  saveWeekMenu();
+  renderWeekMenu();
+}}
+
+function addMenuToShop(dayKey) {{
+  const recipeIdx = weekMenu[dayKey];
+  if (recipeIdx === undefined || !R[recipeIdx]) return;
+  const recipe = R[recipeIdx];
+  let added = 0;
+  recipe.ingredients.forEach(ing => {{
+    if (!shop.includes(ing)) {{ shop.push(ing); added++; }}
+  }});
+  saveShop();
+  if (added > 0) showToast(added + ' ingredi\\u00ebnt' + (added > 1 ? 'en' : '') + ' toegevoegd!');
+  else showToast('Alle ingredi\\u00ebnten staan al op je lijst');
+}}
+
+function updateSyncCode() {{
+  // Encode weekmenu as compact shareable string
+  const data = JSON.stringify(weekMenu);
+  const code = btoa(unescape(encodeURIComponent(data)));
+  $('syncCode').value = code;
+}}
+
+function copySyncCode() {{
+  const code = $('syncCode').value;
+  if (navigator.clipboard) {{
+    navigator.clipboard.writeText(code).then(() => showToast('Code gekopieerd!'));
+  }} else {{
+    $('syncCode').select();
+    document.execCommand('copy');
+    showToast('Code gekopieerd!');
+  }}
+}}
+
+function applySyncCode() {{
+  const code = $('syncCodeInput').value.trim();
+  if (!code) {{ showToast('Plak eerst een code'); return; }}
+  try {{
+    const data = JSON.parse(decodeURIComponent(escape(atob(code))));
+    if (typeof data === 'object') {{
+      weekMenu = data;
+      saveWeekMenu();
+      renderWeekMenu();
+      showToast('Weekmenu geladen van partner!');
+      $('syncCodeInput').value = '';
+    }} else {{
+      showToast('Ongeldige code');
+    }}
+  }} catch(e) {{
+    showToast('Ongeldige code');
   }}
 }}
 
