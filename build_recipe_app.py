@@ -711,7 +711,7 @@ async function doLogin() {
 }
 
 async function initApp() {
-  // Check sessionStorage for cached password
+  // Check localStorage for cached password
   const cached = localStorage.getItem('bd_pass');
   if (cached) {
     const data = await decryptData(cached);
@@ -722,6 +722,8 @@ async function initApp() {
       renderFilters(); renderCats(); render(); updateFab();
       return;
     }
+    // Cached password no longer valid (changed), clear it
+    localStorage.removeItem('bd_pass');
   }
   // Show login screen, set up enter key
   $('loginPass').addEventListener('keydown', e => {
