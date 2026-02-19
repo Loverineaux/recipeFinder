@@ -70,6 +70,41 @@ function getClient(req, res) {
   return session.client;
 }
 
+// Recursively find all products/articles in the Picnic search response
+function extractProducts(obj, products = []) {
+  if (!obj) return products;
+
+  // If this object has an id and name, it's likely a product
+  if (obj.id && obj.name && typeof obj.name === 'string') {
+    // Skip category/group headers (they usually don't have prices)
+    const hasPrice = obj.display_price != null || obj.price != null || obj.unit_quantity;
+    if (hasPrice) {
+      products.push({
+        id: obj.id,
+        name: obj.name,
+        price: obj.display_price != null ? obj.display_price : (obj.price || 0),
+        unit: obj.unit_quantity || obj.unit_quantity_sub || '',
+        image: obj.image_id ? `https://storefront-prod.nl.picnicinternational.com/static/images/${obj.image_id}/small.png` : null
+      });
+    }
+  }
+
+  // Recurse into arrays and objects
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      extractProducts(item, products);
+    }
+  } else if (typeof obj === 'object') {
+    for (const key of Object.keys(obj)) {
+      if (typeof obj[key] === 'object' && obj[key] !== null) {
+        extractProducts(obj[key], products);
+      }
+    }
+  }
+
+  return products;
+}
+
 // Search products
 app.get('/api/search', async (req, res) => {
   const client = getClient(req, res);
@@ -83,26 +118,24 @@ app.get('/api/search', async (req, res) => {
 
     const results = await client.search(q);
 
-    // Flatten results into a simple product list
-    const products = [];
-    if (Array.isArray(results)) {
-      for (const group of results) {
-        const items = group.items || [];
-        for (const item of items) {
-          if (item.type === 'SINGLE_ARTICLE' || item.type === 'PRODUCT') {
-            products.push({
-              id: item.id,
-              name: item.name,
-              price: item.display_price != null ? item.display_price : (item.price || 0),
-              unit: item.unit_quantity || '',
-              image: item.image_id ? `https://storefront-prod.nl.picnicinternational.com/static/images/${item.image_id}/small.png` : null
-            });
-          }
-        }
-      }
+    // Log raw response structure for debugging (first search only)
+    if (!app._searchLogged) {
+      console.log('Raw search response for "' + q + '":', JSON.stringify(results).substring(0, 2000));
+      app._searchLogged = true;
     }
 
-    res.json({ products });
+    // Recursively extract all products from the response
+    const products = extractProducts(results);
+
+    // Deduplicate by id
+    const seen = new Set();
+    const unique = products.filter(p => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+
+    res.json({ products: unique });
   } catch (err) {
     console.error('Search failed:', err.message);
     res.status(500).json({ error: 'Zoeken mislukt: ' + err.message });
