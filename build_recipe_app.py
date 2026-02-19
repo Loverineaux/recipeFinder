@@ -475,6 +475,34 @@ def build_html(recipes, password=''):
         encrypted_payload = encrypt_data(payload, password)
         print(f"  Data versleuteld ({len(payload)//1024}KB -> {len(encrypted_payload['data'])//1024}KB ciphertext)")
 
+    # Load app icon if available
+    icon_path = os.path.join(FOLDER, 'icon.png')
+    icon_192_b64 = ''
+    icon_512_b64 = ''
+    if os.path.exists(icon_path):
+        icon_img = Image.open(icon_path)
+        if icon_img.mode in ('CMYK', 'P'):
+            icon_img = icon_img.convert('RGBA')
+        for size in [192, 512]:
+            resized = icon_img.resize((size, size), Image.LANCZOS)
+            buf = io.BytesIO()
+            resized.save(buf, format='PNG', optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+            if size == 192:
+                icon_192_b64 = b64
+            else:
+                icon_512_b64 = b64
+        print(f"  App-icoon geladen: {os.path.basename(icon_path)}")
+
+    icon_192_uri = f"data:image/png;base64,{icon_192_b64}" if icon_192_b64 else ''
+    icon_512_uri = f"data:image/png;base64,{icon_512_b64}" if icon_512_b64 else ''
+
+    manifest_icons = []
+    if icon_192_b64:
+        manifest_icons.append({"src": icon_192_uri, "sizes": "192x192", "type": "image/png"})
+    if icon_512_b64:
+        manifest_icons.append({"src": icon_512_uri, "sizes": "512x512", "type": "image/png"})
+
     manifest = {
         "name": "Broodje Dunner Recepten",
         "short_name": "Recepten",
@@ -482,7 +510,7 @@ def build_html(recipes, password=''):
         "display": "standalone",
         "background_color": "#f0f4f0",
         "theme_color": "#2d6a4f",
-        "icons": []
+        "icons": manifest_icons
     }
     manifest_b64 = base64.b64encode(json.dumps(manifest).encode()).decode()
 
@@ -728,6 +756,7 @@ async function initApp() {
 <meta name="mobile-web-app-capable" content="yes">
 <title>Broodje Dunner Recepten</title>
 <link rel="manifest" href="data:application/json;base64,{manifest_b64}">
+{f'<link rel="apple-touch-icon" href="{icon_192_uri}">' if icon_192_b64 else ''}
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
 :root {{
@@ -1602,18 +1631,29 @@ body {{
   </div>
 </div>
 
+<div class="overlay" id="recipeViewOverlay">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <h2>Recept</h2>
+      <button class="modal-close" onclick="$('recipeViewOverlay').classList.remove('open')">&times;</button>
+    </div>
+    <div id="recipeViewContent" style="padding:16px"></div>
+  </div>
+</div>
+
 <script>
 {data_script}
 let ebook = 'all';
 let cat = 'all';
 let q = '';
 let shop = JSON.parse(localStorage.getItem('bd_shop') || '[]');
+let shopRecipes = JSON.parse(localStorage.getItem('bd_shop_recipes') || '[]');
 
 const $ = id => document.getElementById(id);
 
 function esc(s) {{ const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }}
 
-function saveShop() {{ localStorage.setItem('bd_shop', JSON.stringify(shop)); updateFab(); }}
+function saveShop() {{ localStorage.setItem('bd_shop', JSON.stringify(shop)); localStorage.setItem('bd_shop_recipes', JSON.stringify(shopRecipes)); updateFab(); }}
 
 function updateFab() {{
   const c = $('fabCount');
@@ -1718,10 +1758,13 @@ function showToast(msg) {{
 
 function addShop(i) {{
   const r = filtered()[i];
+  const origIdx = r._idx;
   let added = 0;
   r.ingredients.forEach(ing => {{
     if (!shop.includes(ing)) {{ shop.push(ing); added++; }}
   }});
+  // Track which recipe was added to shopping list (for weekmenu)
+  if (!shopRecipes.includes(origIdx)) shopRecipes.push(origIdx);
   saveShop();
   if (added > 0) showToast(added + ' ingredi\\u00ebnt' + (added>1?'en':'') + ' toegevoegd!');
   else showToast('Alle ingredi\\u00ebnten staan al op je lijst');
@@ -1748,7 +1791,7 @@ $('clearBtn').onclick = () => {{
 }};
 $('confirmNo').onclick = () => $('confirmOverlay').classList.remove('open');
 $('confirmYes').onclick = () => {{
-  shop = []; saveShop(); renderShop();
+  shop = []; shopRecipes = []; saveShop(); renderShop();
   $('confirmOverlay').classList.remove('open');
   showToast('Boodschappenlijst geleegd');
 }};
@@ -2117,8 +2160,8 @@ function renderWeekMenu() {{
   }}
   saveWeekMenu();
 
-  // Build recipe options for dropdown
-  const recipeOpts = R.map((r, i) => `<option value="${{i}}">${{esc(r.name)}} (E${{r.ebook}})</option>`).join('');
+  // Build recipe options for dropdown — only recipes added to shopping list
+  const recipeOpts = shopRecipes.map(i => R[i] ? `<option value="${{i}}">${{esc(R[i].name)}} (E${{R[i].ebook}})</option>` : '').join('');
 
   $('weekMenuContent').innerHTML = days.map(day => {{
     const recipeIdx = weekMenu[day.key];
@@ -2141,14 +2184,16 @@ function renderWeekMenu() {{
           <button class="weekmenu-remove" onclick="removeFromMenu('${{day.key}}')" title="Verwijder">\\u2717</button>
         </div>
         <div class="weekmenu-add" style="padding-top:0">
-          <button class="add-btn" onclick="addMenuToShop('${{day.key}}')" style="font-size:12px;padding:8px">+ Ingredi\\u00ebnten naar boodschappenlijst</button>
+          <button class="add-btn" onclick="showMenuRecipe('${{day.key}}')" style="font-size:12px;padding:8px">Recept weergeven</button>
         </div>
       ` : `
         <div class="weekmenu-add">
-          <select onchange="assignRecipe('${{day.key}}', this.value)">
-            <option value="">Kies een recept...</option>
-            ${{recipeOpts}}
-          </select>
+          ${{recipeOpts ? `
+            <select onchange="assignRecipe('${{day.key}}', this.value)">
+              <option value="">Kies een recept...</option>
+              ${{recipeOpts}}
+            </select>
+          ` : `<p style="color:var(--text-light);font-size:13px;text-align:center;padding:8px 0">Voeg eerst recepten toe aan je boodschappenlijst</p>`}}
         </div>
       `}}
     </div>`;
@@ -2171,17 +2216,25 @@ function removeFromMenu(dayKey) {{
   renderWeekMenu();
 }}
 
-function addMenuToShop(dayKey) {{
+function showMenuRecipe(dayKey) {{
   const recipeIdx = weekMenu[dayKey];
   if (recipeIdx === undefined || !R[recipeIdx]) return;
-  const recipe = R[recipeIdx];
-  let added = 0;
-  recipe.ingredients.forEach(ing => {{
-    if (!shop.includes(ing)) {{ shop.push(ing); added++; }}
-  }});
-  saveShop();
-  if (added > 0) showToast(added + ' ingredi\\u00ebnt' + (added > 1 ? 'en' : '') + ' toegevoegd!');
-  else showToast('Alle ingredi\\u00ebnten staan al op je lijst');
+  const r = R[recipeIdx];
+  const img = IMGS[recipeIdx] || '';
+  $('recipeViewContent').innerHTML = `
+    ${{img ? `<img src="${{img}}" style="width:100%;max-height:220px;object-fit:cover;border-radius:12px;margin-bottom:12px">` : ''}}
+    <h2 style="margin-bottom:4px">${{esc(r.name)}}</h2>
+    <div style="color:var(--text-light);font-size:13px;margin-bottom:16px">${{r.category}}${{r.time ? ' \\u2022 ' + r.time : ''}}${{r.portions ? ' \\u2022 ' + r.portions + 'p' : ''}}</div>
+    ${{r.ingredients.length ? `
+    <h4 style="margin-bottom:8px">&#129379; Ingredi&euml;nten</h4>
+    <ul style="margin-bottom:16px;padding-left:20px">${{r.ingredients.map(i => `<li style="padding:3px 0">${{esc(i)}}</li>`).join('')}}</ul>
+    ` : ''}}
+    ${{r.steps.length ? `
+    <h4 style="margin-bottom:8px">&#128293; Bereiding</h4>
+    <div>${{r.steps.map((s, si) => `<div style="display:flex;gap:10px;padding:6px 0"><span class="step-num">${{si+1}}</span><span style="line-height:1.5">${{esc(s)}}</span></div>`).join('')}}</div>
+    ` : ''}}
+  `;
+  $('recipeViewOverlay').classList.add('open');
 }}
 
 function updateSyncCode() {{
