@@ -490,14 +490,18 @@ def build_html(recipes, password=''):
 
     icon_192_uri = f"data:image/png;base64,{icon_192_b64}" if icon_192_b64 else ''
 
+    manifest_icons = []
+    if icon_192_b64:
+        manifest_icons.append({"src": icon_192_uri, "sizes": "192x192", "type": "image/png", "purpose": "any"})
     manifest = {
-        "name": "Broodje Dunner Recepten",
-        "short_name": "Recepten",
-        "start_url": ".",
+        "name": "Broodje Dunner",
+        "short_name": "Broodje Dunner",
+        "start_url": "./recepten_app.html",
+        "scope": "./",
         "display": "standalone",
         "background_color": "#f0f4f0",
         "theme_color": "#2d6a4f",
-        "icons": []
+        "icons": manifest_icons
     }
     manifest_b64 = base64.b64encode(json.dumps(manifest).encode()).decode()
 
