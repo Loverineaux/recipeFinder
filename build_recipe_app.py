@@ -8,23 +8,55 @@ import re
 import os
 import json
 import base64
+import io
 from pypdf import PdfReader
+from PIL import Image
 
 FOLDER = os.path.dirname(os.path.abspath(__file__))
 
+# Image settings for recipe photos
+IMG_MAX_WIDTH = 500
+IMG_JPEG_QUALITY = 70
+
+
+def extract_page_image(page):
+    """Extract the first image from a PDF page and return as resized JPEG base64."""
+    try:
+        imgs = page.images
+        if not imgs:
+            return None
+        img_data = imgs[0].data
+        img = Image.open(io.BytesIO(img_data))
+        # Convert CMYK/RGBA to RGB
+        if img.mode in ('CMYK', 'RGBA', 'P'):
+            img = img.convert('RGB')
+        # Resize if wider than max
+        if img.width > IMG_MAX_WIDTH:
+            ratio = IMG_MAX_WIDTH / img.width
+            new_h = int(img.height * ratio)
+            img = img.resize((IMG_MAX_WIDTH, new_h), Image.LANCZOS)
+        # Save as JPEG to buffer
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=IMG_JPEG_QUALITY, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception as e:
+        print(f"    [WARN] Image extraction failed: {e}")
+        return None
+
 
 def extract_pages(pdf_path):
-    """Extract text per page from PDF."""
+    """Extract text and page objects per page from PDF."""
     reader = PdfReader(pdf_path)
     pages = []
     for page in reader.pages:
         text = page.extract_text()
         if text:
-            pages.append(text)
+            pages.append((text, page))
     return pages
 
 
-def parse_recipe_page(text, ebook_num):
+def parse_recipe_page(text, ebook_num, pdf_page=None):
     """Parse a single page that may contain a recipe.
 
     Two layouts exist:
@@ -230,6 +262,11 @@ def parse_recipe_page(text, ebook_num):
                 mins = int(num_str)
                 parsed_time = f"{mins} min"
 
+    # Extract image from PDF page
+    image_b64 = None
+    if pdf_page is not None:
+        image_b64 = extract_page_image(pdf_page)
+
     return {
         'name': recipe_name,
         'ebook': ebook_num,
@@ -237,7 +274,8 @@ def parse_recipe_page(text, ebook_num):
         'portions': portions,
         'ingredients': ingredients,
         'steps': clean_steps,
-        'vega': vega
+        'vega': vega,
+        'image': image_b64
     }
 
 
@@ -285,8 +323,8 @@ def extract_recipes_from_ebook(pdf_path, ebook_num):
     name_fixes_lower = {k.lower(): v for k, v in NAME_FIXES.items()}
     prefix_fixes_lower = {k.lower(): v for k, v in NAME_PREFIX_FIXES.items()}
 
-    for page_text in pages:
-        recipe = parse_recipe_page(page_text, ebook_num)
+    for page_text, pdf_page in pages:
+        recipe = parse_recipe_page(page_text, ebook_num, pdf_page)
         if recipe:
             name_lower = recipe['name'].lower()
             # Try exact match first
@@ -370,7 +408,17 @@ def build_html(recipes):
     for r in recipes:
         r['category'] = categorize_recipe(r)
 
+    # Separate images from recipe data to keep JSON compact
+    images = []
+    for r in recipes:
+        images.append(r.get('image') or '')
+        # Don't include base64 in the main JSON
+        r_copy = dict(r)
+        r.pop('image', None)
+
     recipes_json = json.dumps(recipes, ensure_ascii=False)
+    # Build images as a JS array of strings
+    images_json = json.dumps(images, ensure_ascii=False)
 
     manifest = {
         "name": "Broodje Dunner Recepten",
@@ -534,6 +582,14 @@ body {{
   transition: transform 0.1s;
 }}
 .recipe-card:active {{ transform: scale(0.988); }}
+.card-img {{
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: block;
+  cursor: pointer;
+  background: #e8e8e8;
+}}
 .card-top {{
   padding: 14px 16px 10px;
   cursor: pointer;
@@ -726,6 +782,20 @@ body {{
   cursor: pointer;
   color: var(--text-light);
   line-height: 1;
+}}
+.modal-back {{
+  background: none;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--green);
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}}
+.modal-back:active {{
+  background: var(--green-bg);
 }}
 .shop-item {{
   display: flex;
@@ -1037,6 +1107,7 @@ body {{
 <div class="overlay" id="picnicOverlay">
   <div class="modal">
     <div class="modal-header">
+      <button class="modal-back" onclick="$('picnicOverlay').classList.remove('open');renderShop();$('overlay').classList.add('open')">&#8592; Terug</button>
       <h2>&#128722; Picnic</h2>
       <button class="modal-close" onclick="$('picnicOverlay').classList.remove('open')">&times;</button>
     </div>
@@ -1069,6 +1140,7 @@ body {{
 
 <script>
 const R = {recipes_json};
+const IMGS = {images_json};
 
 let ebook = 'all';
 let cat = 'all';
@@ -1088,7 +1160,7 @@ function updateFab() {{
 }}
 
 function filtered() {{
-  let f = R;
+  let f = R.map((r, idx) => ({{...r, _idx: idx}}));
   if (ebook !== 'all') f = f.filter(r => r.ebook == ebook);
   if (cat !== 'all') f = f.filter(r => r.category === cat);
   if (q) {{
@@ -1137,6 +1209,7 @@ function render() {{
 
   $('list').innerHTML = recipes.map((r, i) => `
     <div class="recipe-card">
+      ${{IMGS[r._idx] ? `<img class="card-img" src="${{IMGS[r._idx]}}" alt="${{esc(r.name)}}" onclick="toggle(${{i}})" loading="lazy">` : ''}}
       <div class="card-top" onclick="toggle(${{i}})">
         <h3>${{esc(r.name)}}</h3>
         <div class="card-meta">
