@@ -9,10 +9,57 @@ import os
 import json
 import base64
 import io
+import hashlib
+import secrets
 from pypdf import PdfReader
 from PIL import Image
 
 FOLDER = os.path.dirname(os.path.abspath(__file__))
+
+# --- Encryption helpers (AES-256-GCM) ---
+def get_password():
+    """Get the app password from .env file or environment variable."""
+    env_path = os.path.join(FOLDER, '.env')
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('APP_PASSWORD='):
+                    return line.split('=', 1)[1].strip().strip('"').strip("'")
+    # Fallback to environment variable
+    return os.environ.get('APP_PASSWORD', '')
+
+
+def encrypt_data(plaintext: str, password: str) -> dict:
+    """Encrypt plaintext with AES-256-GCM using PBKDF2-derived key.
+    Returns dict with salt, iv, and ciphertext (all base64).
+    """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+
+    salt = secrets.token_bytes(16)
+    iv = secrets.token_bytes(12)  # 96-bit IV for AES-GCM
+
+    # Derive 256-bit key with PBKDF2 (same params used in JS Web Crypto API)
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    key = kdf.derive(password.encode('utf-8'))
+
+    # Encrypt
+    aesgcm = AESGCM(key)
+    plaintext_bytes = plaintext.encode('utf-8')
+    ciphertext = aesgcm.encrypt(iv, plaintext_bytes, None)
+
+    return {
+        'salt': base64.b64encode(salt).decode('ascii'),
+        'iv': base64.b64encode(iv).decode('ascii'),
+        'data': base64.b64encode(ciphertext).decode('ascii'),
+    }
 
 # Image settings for recipe photos
 IMG_MAX_WIDTH = 500
@@ -401,8 +448,8 @@ def categorize_recipe(r):
     return 'Diner'
 
 
-def build_html(recipes):
-    """Build the complete PWA HTML file."""
+def build_html(recipes, password=''):
+    """Build the complete PWA HTML file. If password is given, encrypt recipe data."""
 
     # Add category to each recipe
     for r in recipes:
@@ -417,8 +464,16 @@ def build_html(recipes):
         r.pop('image', None)
 
     recipes_json = json.dumps(recipes, ensure_ascii=False)
-    # Build images as a JS array of strings
     images_json = json.dumps(images, ensure_ascii=False)
+
+    # Encrypt if password provided
+    use_encryption = bool(password)
+    encrypted_payload = None
+    if use_encryption:
+        # Bundle recipes + images into one payload for encryption
+        payload = json.dumps({'recipes': json.loads(recipes_json), 'images': json.loads(images_json)}, ensure_ascii=False)
+        encrypted_payload = encrypt_data(payload, password)
+        print(f"  Data versleuteld ({len(payload)//1024}KB -> {len(encrypted_payload['data'])//1024}KB ciphertext)")
 
     manifest = {
         "name": "Broodje Dunner Recepten",
@@ -430,6 +485,203 @@ def build_html(recipes):
         "icons": []
     }
     manifest_b64 = base64.b64encode(json.dumps(manifest).encode()).decode()
+
+    # Build the data script section based on whether encryption is used
+    if use_encryption:
+        data_script = f'''
+const ENCRYPTED = {{
+  salt: "{encrypted_payload['salt']}",
+  iv: "{encrypted_payload['iv']}",
+  data: "{encrypted_payload['data']}"
+}};
+let R = [];
+let IMGS = [];
+'''
+    else:
+        data_script = f'''
+const R = {recipes_json};
+const IMGS = {images_json};
+'''
+
+    # Login screen HTML (only shown when encrypted)
+    login_screen_html = ''
+    login_screen_css = ''
+    decrypt_js = ''
+    init_call = 'initApp();' if use_encryption else 'renderFilters();renderCats();render();updateFab();'
+
+    if use_encryption:
+        login_screen_css = '''
+.login-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.login-screen.hidden { display: none; }
+.login-box {
+  background: white;
+  border-radius: 24px;
+  padding: 40px 28px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  text-align: center;
+}
+.login-box h1 {
+  font-size: 24px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.login-box .sub {
+  font-size: 14px;
+  color: var(--text-light);
+  margin-bottom: 28px;
+}
+.login-box .icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+.login-box input {
+  width: 100%;
+  padding: 14px 18px;
+  border: 2px solid #e0e0e0;
+  border-radius: 14px;
+  font-size: 16px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s;
+  margin-bottom: 16px;
+}
+.login-box input:focus {
+  border-color: var(--green);
+}
+.login-box button {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-light) 100%);
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.login-box button:active { transform: scale(0.97); }
+.login-box button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.login-error {
+  color: #c62828;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 12px;
+  min-height: 20px;
+}
+'''
+        login_screen_html = '''
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="icon">&#128274;</div>
+    <h1>Broodje Dunner</h1>
+    <div class="sub">Voer het wachtwoord in om de recepten te openen</div>
+    <input type="password" id="loginPass" placeholder="Wachtwoord" autocomplete="off">
+    <button id="loginBtn" onclick="doLogin()">Ontgrendelen</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+'''
+        decrypt_js = '''
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+}
+
+function b64toBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function decryptData(password) {
+  try {
+    const salt = b64toBytes(ENCRYPTED.salt);
+    const iv = b64toBytes(ENCRYPTED.iv);
+    const ciphertext = b64toBytes(ENCRYPTED.data);
+    const key = await deriveKey(password, salt);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv },
+      key,
+      ciphertext
+    );
+    const text = new TextDecoder().decode(decrypted);
+    return JSON.parse(text);
+  } catch(e) {
+    return null;
+  }
+}
+
+async function doLogin() {
+  const pass = $('loginPass').value;
+  if (!pass) return;
+  $('loginBtn').disabled = true;
+  $('loginBtn').textContent = 'Ontsleutelen...';
+  $('loginError').textContent = '';
+
+  // Small delay for UI update
+  await new Promise(r => setTimeout(r, 50));
+
+  const data = await decryptData(pass);
+  if (data && data.recipes) {
+    R = data.recipes;
+    IMGS = data.images || [];
+    sessionStorage.setItem('bd_pass', pass);
+    $('loginScreen').classList.add('hidden');
+    renderFilters(); renderCats(); render(); updateFab();
+  } else {
+    $('loginError').textContent = 'Verkeerd wachtwoord. Probeer opnieuw.';
+    $('loginBtn').disabled = false;
+    $('loginBtn').textContent = 'Ontgrendelen';
+    $('loginPass').value = '';
+    $('loginPass').focus();
+  }
+}
+
+async function initApp() {
+  // Check sessionStorage for cached password
+  const cached = sessionStorage.getItem('bd_pass');
+  if (cached) {
+    const data = await decryptData(cached);
+    if (data && data.recipes) {
+      R = data.recipes;
+      IMGS = data.images || [];
+      $('loginScreen').classList.add('hidden');
+      renderFilters(); renderCats(); render(); updateFab();
+      return;
+    }
+  }
+  // Show login screen, set up enter key
+  $('loginPass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+  $('loginPass').focus();
+}
+'''
 
     html = f'''<!DOCTYPE html>
 <html lang="nl">
@@ -1060,10 +1312,11 @@ body {{
   .header {{ text-align: center; }}
   .filters, .cat-tabs {{ justify-content: center; }}
 }}
+{login_screen_css}
 </style>
 </head>
 <body>
-
+{login_screen_html}
 <div class="header">
   <h1>Broodje Dunner Recepten</h1>
   <div class="subtitle" id="recipeCount"></div>
@@ -1139,9 +1392,7 @@ body {{
 </div>
 
 <script>
-const R = {recipes_json};
-const IMGS = {images_json};
-
+{data_script}
 let ebook = 'all';
 let cat = 'all';
 let q = '';
@@ -1605,10 +1856,8 @@ async function picnicAddAll() {{
   }}
 }}
 
-renderFilters();
-renderCats();
-render();
-updateFab();
+{decrypt_js}
+{init_call}
 </script>
 </body>
 </html>'''
@@ -1654,8 +1903,16 @@ def main():
     # Sort by ebook then name
     all_recipes.sort(key=lambda r: (r['ebook'], r['name']))
 
+    # Get password for encryption
+    password = get_password()
+    if password:
+        print(f"\n🔒 Wachtwoordbeveiliging ACTIEF — recepten worden versleuteld")
+    else:
+        print(f"\n⚠️  Geen wachtwoord gevonden! Maak een .env bestand met APP_PASSWORD=jouwwachtwoord")
+        print(f"   Of stel environment variable APP_PASSWORD in.")
+
     # Build HTML
-    html = build_html(all_recipes)
+    html = build_html(all_recipes, password=password)
 
     output_path = os.path.join(FOLDER, 'recepten_app.html')
     with open(output_path, 'w', encoding='utf-8') as f:
