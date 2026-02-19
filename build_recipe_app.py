@@ -1228,8 +1228,24 @@ function savePicnicUrl() {{
   showToast('Server URL opgeslagen');
 }}
 
+function getUncheckedItems() {{
+  // Get items from shopping list that are NOT checked off
+  const unchecked = [];
+  const items = document.querySelectorAll('.shop-item');
+  items.forEach((el, i) => {{
+    if (!el.classList.contains('done') && shop[i]) {{
+      unchecked.push(shop[i]);
+    }}
+  }});
+  // Fallback: if modal wasn't rendered yet, return all
+  return unchecked.length > 0 || items.length > 0 ? unchecked : shop;
+}}
+
 function openPicnic() {{
   if (!shop.length) {{ showToast('Je boodschappenlijst is leeg'); return; }}
+  const unchecked = getUncheckedItems();
+  if (!unchecked.length) {{ showToast('Alle items zijn al afgevinkt'); return; }}
+  window._picnicShopItems = unchecked;
   $('overlay').classList.remove('open');
   $('picnicUrl').value = picnicUrl;
   if (picnicSession) {{
@@ -1312,7 +1328,8 @@ function cleanIngredient(ing) {{
 }}
 
 function renderPicnicItems() {{
-  const items = shop.map(ing => ({{
+  const shopItems = window._picnicShopItems || shop;
+  const items = shopItems.map(ing => ({{
     original: ing,
     search: cleanIngredient(ing),
     status: 'wait',
