@@ -1,0 +1,17 @@
+{
+  "name": "picnic-bridge-server",
+  "version": "1.0.0",
+  "description": "Bridge server between Recepten App and Picnic grocery delivery",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "picnic-api": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
