@@ -478,30 +478,17 @@ def build_html(recipes, password=''):
     # Load app icon if available
     icon_path = os.path.join(FOLDER, 'icon.png')
     icon_192_b64 = ''
-    icon_512_b64 = ''
     if os.path.exists(icon_path):
         icon_img = Image.open(icon_path)
         if icon_img.mode in ('CMYK', 'P'):
             icon_img = icon_img.convert('RGBA')
-        for size in [192, 512]:
-            resized = icon_img.resize((size, size), Image.LANCZOS)
-            buf = io.BytesIO()
-            resized.save(buf, format='PNG', optimize=True)
-            b64 = base64.b64encode(buf.getvalue()).decode('ascii')
-            if size == 192:
-                icon_192_b64 = b64
-            else:
-                icon_512_b64 = b64
-        print(f"  App-icoon geladen: {os.path.basename(icon_path)}")
+        resized = icon_img.resize((192, 192), Image.LANCZOS)
+        buf = io.BytesIO()
+        resized.save(buf, format='PNG', optimize=True)
+        icon_192_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+        print(f"  App-icoon geladen: {os.path.basename(icon_path)} ({len(icon_192_b64)//1024}KB base64)")
 
     icon_192_uri = f"data:image/png;base64,{icon_192_b64}" if icon_192_b64 else ''
-    icon_512_uri = f"data:image/png;base64,{icon_512_b64}" if icon_512_b64 else ''
-
-    manifest_icons = []
-    if icon_192_b64:
-        manifest_icons.append({"src": icon_192_uri, "sizes": "192x192", "type": "image/png"})
-    if icon_512_b64:
-        manifest_icons.append({"src": icon_512_uri, "sizes": "512x512", "type": "image/png"})
 
     manifest = {
         "name": "Broodje Dunner Recepten",
@@ -510,7 +497,7 @@ def build_html(recipes, password=''):
         "display": "standalone",
         "background_color": "#f0f4f0",
         "theme_color": "#2d6a4f",
-        "icons": manifest_icons
+        "icons": []
     }
     manifest_b64 = base64.b64encode(json.dumps(manifest).encode()).decode()
 
@@ -756,7 +743,8 @@ async function initApp() {
 <meta name="mobile-web-app-capable" content="yes">
 <title>Broodje Dunner Recepten</title>
 <link rel="manifest" href="data:application/json;base64,{manifest_b64}">
-{f'<link rel="apple-touch-icon" href="{icon_192_uri}">' if icon_192_b64 else ''}
+{f'<link rel="icon" type="image/png" sizes="192x192" href="{icon_192_uri}">' if icon_192_b64 else ''}
+{f'<link rel="apple-touch-icon" sizes="192x192" href="{icon_192_uri}">' if icon_192_b64 else ''}
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
 :root {{
