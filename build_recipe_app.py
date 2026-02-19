@@ -1284,12 +1284,31 @@ function showStatus(msg, type) {{
 }}
 
 function cleanIngredient(ing) {{
-  return ing
-    .replace(/^\\d+[\\.,]?\\d*\\s*(gram|gr|g|ml|liter|l|el|tl|stuks?|blik(je)?|plak(ken)?|teen(tje)?|snufje|handje|halve|hele|zakje|potje|stengel|bundel|bos|bol|blad(eren)?|vellen?|sprieten?)\\b\\s*/i, '')
-    .replace(/^(een|twee|drie|vier|vijf|zes)\\s+/i, '')
-    .replace(/^(half|halve|kwart)\\s+/i, '')
-    .replace(/\\(.*?\\)/g, '')
-    .trim() || ing;
+  let s = ing;
+  // Remove bracketed text like (Santa Maria), (1 blik), (ongekookt)
+  s = s.replace(/\\(.*?\\)/g, '');
+  // Remove quantities at END: "200 gram", "4 stuks", "1 el", "1/2 tl", "halve", "1 stuk"
+  s = s.replace(/\\s+\\d+[\\.,\\/]?\\d*\\s*(gram|gr|g|ml|liter|l|el|tl|stuks?|blik(je)?|plak(ken)?|teen(tje)?|snufje|handje?|hele|zakje|potje|stengel|bundel|bos|bol|blaad(jes)?|blad(eren)?|vellen?|sprieten?|streng(en)?|trosje|koekje|druppels?|beker|bakje|eetlepel|theelepel|schijfjes?|cm|grote?|stengels?)\\s*$/i, '');
+  // Remove trailing amounts like "100 gram", "2 stuks" without unit word
+  s = s.replace(/\\s+\\d+[\\.,\\/]?\\d*\\s*$/i, '');
+  // Remove trailing words: Halve, Handje, Naar wens, Naar smaak, Een halve, Grote hand
+  s = s.replace(/\\s+(Halve|halve|Een halve|Handje|handje|Grote hand|Naar wens!?|Naar smaak!?)\\s*$/i, '');
+  // Remove leading "- " (tips/notes that slipped through)
+  s = s.replace(/^-\\s+/, '');
+  // Remove quantities at START: "1 tl", "100 gram", "15 ml"
+  s = s.replace(/^\\d+[\\.,\\/]?\\d*\\s*(gram|gr|g|ml|liter|l|el|tl|stuks?|blik(je)?|plak(ken)?|teen(tje)?|snufje|handje|halve|hele|zakje|potje)\\b\\s*/i, '');
+  // Remove leading count words
+  s = s.replace(/^(een|twee|drie|vier|vijf|zes|half|halve|kwart)\\s+/i, '');
+  // Remove "half zakje" type prefixes
+  s = s.replace(/^half\\s+(zakje|blikje|stuk)\\s*/i, '');
+  // Remove trailing "half zakje" / "halve" etc.
+  s = s.replace(/\\s+(half|halve)\\s+(zakje|blikje|stuk)\\s*$/i, '');
+  // Clean up double spaces
+  s = s.replace(/\\s{{2,}}/g, ' ');
+  s = s.trim();
+  // If nothing useful left, return original
+  if (s.length < 2) return ing;
+  return s;
 }}
 
 function renderPicnicItems() {{
